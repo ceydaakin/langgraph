@@ -307,3 +307,29 @@ class TestSqliteSaver:
             # Nested digit-starting key via dotted path
             results = list(saver.list(None, filter={"user.123abc": "ok2"}))
             assert len(results) == 1
+
+    def test_metadata_filter_top_level_key_with_dot(self) -> None:
+        """A top-level key containing a dot matches as a literal key first."""
+        with SqliteSaver.from_conn_string(":memory:") as saver:
+            flat: RunnableConfig = {
+                "configurable": {"thread_id": "flat", "checkpoint_ns": ""}
+            }
+            both: RunnableConfig = {
+                "configurable": {"thread_id": "both", "checkpoint_ns": ""}
+            }
+            saver.put(flat, empty_checkpoint(), {"group.sub": "alpha"}, {})
+            saver.put(
+                both,
+                empty_checkpoint(),
+                {"group.sub": "alpha", "group": {"sub": "nested"}},
+                {},
+            )
+
+            results = list(saver.list(None, filter={"group.sub": "alpha"}))
+            assert {r.config["configurable"]["thread_id"] for r in results} == {
+                "flat",
+                "both",
+            }
+
+            # The literal key takes precedence over the nested path
+            assert list(saver.list(None, filter={"group.sub": "nested"})) == []

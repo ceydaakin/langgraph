@@ -66,9 +66,16 @@ def _metadata_predicate(
     for query_key, query_value in metadata_filter.items():
         _validate_filter_key(query_key)
         operator, param_value = _where_value(query_value)
-        predicates.append(
-            f"json_extract(CAST(metadata AS TEXT), '$.{query_key}') {operator}"
-        )
+        extract = f"json_extract(CAST(metadata AS TEXT), '$.{query_key}')"
+        if "." in query_key:
+            # Match a literal top-level key such as "group.sub" first (as the
+            # other savers do), then fall back to the nested path group -> sub.
+            # The key is validated above, so it cannot contain a '"'.
+            extract = (
+                f"""COALESCE(json_extract(CAST(metadata AS TEXT), '$."{query_key}"'), """
+                f"{extract})"
+            )
+        predicates.append(f"{extract} {operator}")
         param_values.append(param_value)
 
     return (predicates, param_values)
