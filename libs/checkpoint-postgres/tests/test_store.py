@@ -411,6 +411,26 @@ def test_search_namespace_segment_boundary(store) -> None:
     assert _namespaces(("fo",)) == set()
 
 
+def test_search_numeric_range_filters(store) -> None:
+    """Range operators with a numeric operand compare numbers, not text."""
+    store.put(("scores",), "ten", {"score": 10.0})
+    store.put(("scores",), "two", {"score": 2})
+    store.put(("scores",), "neg", {"score": -10})
+    store.put(("scores",), "bool", {"score": False})
+    store.put(("scores",), "obj", {"score": {"a": 1}})
+    store.put(("scores",), "text", {"score": "99"})
+
+    def keys(flt: dict) -> set[str]:
+        return {item.key for item in store.search(("scores",), filter=flt)}
+
+    assert keys({"score": {"$gt": 4.99}}) == {"ten"}
+    assert keys({"score": {"$gt": -20}}) == {"ten", "two", "neg"}
+    assert keys({"score": {"$gte": 2}}) == {"ten", "two"}
+    assert keys({"score": {"$lt": 10}}) == {"two", "neg"}
+    assert keys({"score": {"$lte": -10}}) == {"neg"}
+    assert keys({"score": {"$gt": 1, "$lt": 5}}) == {"two"}
+
+
 def test_search_empty_prefix_is_unconstrained(store) -> None:
     """An empty prefix constrains nothing and must return every namespace."""
     for namespace in [("a",), ("b", "c"), ("d", "e", "f")]:

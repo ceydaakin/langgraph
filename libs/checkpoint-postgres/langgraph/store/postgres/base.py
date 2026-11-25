@@ -52,6 +52,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_RANGE_OPERATORS = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}
+
 
 class Migration(NamedTuple):
     """A database migration with optional conditions and parameters."""
@@ -651,14 +653,18 @@ class BasePostgresStore(Generic[C]):
         """Helper to generate filter conditions."""
         if op == "$eq":
             return "value->%s = %s::jsonb", [key, json.dumps(value)]
-        elif op == "$gt":
-            return "value->>%s > %s", [key, str(value)]
-        elif op == "$gte":
-            return "value->>%s >= %s", [key, str(value)]
-        elif op == "$lt":
-            return "value->>%s < %s", [key, str(value)]
-        elif op == "$lte":
-            return "value->>%s <= %s", [key, str(value)]
+        elif op in _RANGE_OPERATORS:
+            sql_op = _RANGE_OPERATORS[op]
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                # Compare JSON numbers numerically; `->>` yields text, so a plain
+                # comparison would order "10" before "4.99". Other JSON types
+                # (booleans, objects, strings) become NULL and never match.
+                return (
+                    "(CASE WHEN jsonb_typeof(value->%s) = 'number' "
+                    f"THEN (value->>%s)::float8 END) {sql_op} %s",
+                    [key, key, float(value)],
+                )
+            return f"value->>%s {sql_op} %s", [key, str(value)]
         elif op == "$ne":
             return "value->%s != %s::jsonb", [key, json.dumps(value)]
         else:
